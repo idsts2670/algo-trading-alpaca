@@ -1,0 +1,83 @@
+flowchart TD
+    START(["CloudWatch fires
+9:30 AM ET"]) --> handler["handler()
+get_clock()"]
+
+    handler --> open{clock.is_open?}
+    open -->|No| SKIP(["return: skipped
+market_closed"])
+    open -->|Yes| scan
+
+    subgraph scan["MACD Signal Scan — build_target_portfolio()"]
+        M7["Magnificent 7
+AAPL · MSFT · NVDA · GOOGL · AMZN · META · TSLA"]
+        M7 --> hist["get_price_history()
+500 x 5-min bars · last 14 days"]
+        hist --> macd["calculate_macd_signal()
+pandas_ta.macd(fast=3, slow=16, signal=9)
+score = MACD_line - signal_line"]
+    end
+
+    scan --> positive{Any score > 0?}
+    positive -->|No| CASH(["Log: All MACD signals
+negative — holding cash"])
+    positive -->|Yes| select["Select positive symbols
+Equal weight allocation
+e.g. 3 of 7 → 33.3% each"]
+
+    select --> snapshot
+    CASH --> DONE
+
+    subgraph snapshot["Account Snapshot"]
+        GET["get_account() → buying_power
+get_all_positions() → held
+_get_portfolio() ← DynamoDB"]
+    end
+
+    snapshot --> cancel
+
+    subgraph cancel["Cancel Open Orders"]
+        CANCEL["get_orders()
+cancel_order() x n"]
+    end
+
+    cancel --> rebal
+
+    subgraph rebal["Rebalance"]
+        DIFF["_desired_positions()
+_position_changes()"]
+        DIFF --> SELL["① SELL excess
+sleep 2s"]
+        SELL --> BUY["② BUY new positions
+sleep 2s"]
+    end
+
+    BUY --> hours{Regular hours?
+9:30 AM-4:00 PM ET}
+
+    hours -->|Yes| REG["MarketOrderRequest
+TrailingStopOrderRequest
+TimeInForce.DAY / GTC"]
+    hours -->|"No
+overnight / pre / after"| EXT["LimitOrderRequest
+StopLimitOrderRequest
+extended_hours=True
+feed=DataFeed.OVERNIGHT"]
+
+    REG --> protect
+    EXT --> protect
+
+    subgraph protect["Protect Positions"]
+        STOP["place_trailing_stop_order()
+trail = 4.75% on all held"]
+    end
+
+    protect --> store
+
+    subgraph store["Log to DynamoDB"]
+        DB["_store_portfolio()
+accountHash · cash · positions"]
+    end
+
+    store --> DONE(["return
+statusCode: 200"])
