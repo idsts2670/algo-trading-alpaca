@@ -1,0 +1,86 @@
+flowchart TD
+    TRIGGER["☁️ CloudWatch Cron<br/>Mon–Fri 9:30 AM ET"]
+
+    subgraph HANDLER["handler()  —  AWS Lambda entry point"]
+        H1["Get market clock<br/>from Alpaca"]
+        H2{"Market open<br/>or weekday<br/>extended hours?"}
+        H3["Return: skipped<br/>market_closed"]
+    end
+
+    subgraph PORTFOLIO["build_target_portfolio()  —  Signal scan"]
+        P1["For each of Magnificent 7<br/>AAPL MSFT NVDA GOOGL AMZN META TSLA"]
+        P2["Fetch 120 daily bars<br/>from Alpaca"]
+
+        subgraph LBR["calculate_lbr_signal()  —  LBR 3/10 Anti setup"]
+            L1{"≥ 31 bars?"}
+            L2["Compute LBR oscillator<br/>SMA(3) − SMA(10) = MACD line<br/>SMA(16) of MACD = signal line<br/>histogram = MACD − signal"]
+            L3{"Rule 2<br/>ADX(14) &gt; 32<br/>AND rising?"}
+            L4{"Rule 3<br/>Close &gt; EMA(20)?"}
+            L5{"Rule 4<br/>Signal line crossed<br/>zero from below<br/>in last 16 bars?"}
+            L6{"Rule 5<br/>MACD pulled back<br/>to ≤ signal + 0.5×ATR?"}
+            L7{"Rule 6<br/>Histogram hooking up?<br/>hist_now &gt; hist_prev"}
+            LPASS["selected = True<br/>return score & ATR"]
+            LFAIL["selected = False<br/>return skip_reason"]
+        end
+
+        P3{"Any symbol<br/>selected?"}
+        P4["Return selected symbols<br/>+ ATR per symbol"]
+        P5["Return empty<br/>→ hold cash"]
+    end
+
+    subgraph RUN["run()  —  Execution & rebalancing"]
+        R1["Get account<br/>buying power"]
+        R2["Get current<br/>open positions"]
+        R3["Cancel all<br/>open orders"]
+        R4["Compute desired positions<br/>(equal-weight across<br/>selected symbols)"]
+        R5["Diff current vs desired<br/>→ sells & buys"]
+        R6["Execute SELL orders<br/>(market or limit<br/>depending on session)"]
+        R7["Wait 2s for<br/>fill settlement"]
+        R8["Execute BUY orders"]
+        R9["Wait 2s"]
+        R10["Refresh positions<br/>Save to DynamoDB"]
+
+        subgraph STOPS["ATR stop placement  —  per new buy"]
+            S1["Get entry price<br/>(ask quote)"]
+            S2["stop = ask − ATR × 1.5<br/>target = ask + ATR × 1.5"]
+            S3["Place trailing<br/>stop-sell order<br/>@ ATR distance"]
+        end
+    end
+
+    TRIGGER --> H1
+    H1 --> H2
+    H2 -- "No" --> H3
+    H2 -- "Yes" --> P1
+    P1 --> P2
+    P2 --> L1
+    L1 -- "No" --> LFAIL
+    L1 -- "Yes" --> L2
+    L2 --> L3
+    L3 -- "Yes: strong trend<br/>filter blocks Anti" --> LFAIL
+    L3 -- "No" --> L4
+    L4 -- "No: price below<br/>trend filter" --> LFAIL
+    L4 -- "Yes" --> L5
+    L5 -- "No: no trend<br/>change confirmed" --> LFAIL
+    L5 -- "Yes" --> L6
+    L6 -- "No: pullback<br/>not yet complete" --> LFAIL
+    L6 -- "Yes" --> L7
+    L7 -- "No: waiting<br/>for hook" --> LFAIL
+    L7 -- "Yes" --> LPASS
+    LPASS --> P3
+    LFAIL --> P3
+    P3 -- "None selected" --> P5
+    P3 -- "≥ 1 selected" --> P4
+    P5 --> DONE_CASH["Log: holding cash<br/>no orders placed"]
+    P4 --> R1
+    R1 --> R2
+    R2 --> R3
+    R3 --> R4
+    R4 --> R5
+    R5 --> R6
+    R6 --> R7
+    R7 --> R8
+    R8 --> R9
+    R9 --> R10
+    R10 --> S1
+    S1 --> S2
+    S2 --> S3

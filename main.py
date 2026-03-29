@@ -213,27 +213,44 @@ def calculate_lbr_signal(symbol: str, price_data: list[dict]) -> dict:
     atr = calculate_atr(price_data)
     result["atr"] = atr
 
-    # Signal line crossed zero (Rule 4)
-    # Look back LBR_SIGNAL bars for a cross from below
-    recent_signal = signal_line.iloc[-(LBR_SIGNAL):]
-    crossed_zero = bool(
-        (recent_signal.shift(1) < 0).any() and (recent_signal >= 0).any()
-    )
+    # Signal line crossed zero from below (Rule 4)
+    # Requires: signal line crossed above zero somewhere in the last LBR_SIGNAL bars
+    # AND is currently above zero (trend change confirmed and still valid).
+    recent_signal = signal_line.iloc[-LBR_SIGNAL:]
+    currently_above_zero = float(signal_line.iloc[-1]) >= 0
+    was_below_zero_recently = bool((recent_signal < 0).any())
+    crossed_zero = currently_above_zero and was_below_zero_recently
     result["signal_crossed"] = crossed_zero
     if not crossed_zero:
-        result["skip_reason"] = "signal line has not crossed zero — no trend change"
+        if not currently_above_zero:
+            result["skip_reason"] = "signal line currently below zero — no active uptrend"
+        else:
+            result["skip_reason"] = "signal line has not crossed zero from below — no trend change"
         logger.info(f"{symbol}: {result['skip_reason']}")
         return result
 
-    # Pullback — MACD line near or below signal line (Rule 5)
-    # APPROXIMATION: "near" = within 0.5 * ATR of signal line
+    # Pullback — MACD line pulled back after making a new high (Rule 5)
+    # The Anti requires: MACD made a new high, THEN pulled back to the signal line.
+    # Both conditions must hold simultaneously.
+    # APPROXIMATION: "near signal line" = within 0.5 * ATR of signal line.
     macd_now    = float(macd_line.iloc[-1])
     signal_now  = float(signal_line.iloc[-1])
     proximity   = 0.5 * atr if atr > 0 else abs(signal_now) * 0.1
-    pulled_back = macd_now <= signal_now + proximity
+
+    # Condition A: MACD line previously made a new high in the lookback window
+    recent_macd = macd_line.iloc[-LBR_SIGNAL:]
+    macd_made_new_high = float(recent_macd.max()) > macd_now  # current is below the recent peak
+
+    # Condition B: MACD line is now near or below signal line
+    near_signal = macd_now <= signal_now + proximity
+
+    pulled_back = macd_made_new_high and near_signal
     result["pullback"] = pulled_back
     if not pulled_back:
-        result["skip_reason"] = "MACD line has not pulled back to signal line yet"
+        if not macd_made_new_high:
+            result["skip_reason"] = "MACD line has not made a new high — no impulse to pull back from"
+        else:
+            result["skip_reason"] = "MACD line has not pulled back to signal line yet"
         logger.info(f"{symbol}: {result['skip_reason']}")
         return result
 
@@ -373,6 +390,9 @@ def run() -> None:
     if sell_pos:
         time.sleep(2)  # allow sell orders to settle before buying
 
+    # Fetch quotes BEFORE placing orders — used for stop price calculation
+    entry_quotes = get_current_quotes(list(buy_pos.keys())) if buy_pos else {}
+
     for symbol, qty in buy_pos.items():
         place_order(None, symbol, qty, "BUY")
 
@@ -388,32 +408,28 @@ def run() -> None:
     # APPROXIMATION: Raschke sets stops at swing lows from price structure.
     # Trailing stops are replaced by fixed ATR stops placed at order time.
     # Profit target = entry + (ATR * ATR_STOP_MULTIPLIER * RISK_REWARD_RATIO) — 1:1 R:R.
-
-    # Get current quotes for entry price reference
     if buy_pos:
-        entry_quotes = get_current_quotes(list(buy_pos.keys()))
         for symbol, qty in buy_pos.items():
             ask = Decimal(str(entry_quotes[symbol]["askPrice"]))
             atr = Decimal(str(atr_by_symbol.get(symbol, 0)))
+            # atr_by_symbol only contains selected symbols — fallback to 0 should never
+            # trigger in normal operation. If it does, a refactor has broken the assumption
+            # that buy_pos symbols are always a subset of selected symbols.
             if atr == 0:
                 # APPROXIMATION: fallback to 2% stop if ATR unavailable
                 logger.warning(f"{symbol}: ATR unavailable, using 2% fallback stop")
                 atr = ask * Decimal("0.02")
             stop_price = ask - (atr * Decimal(str(ATR_STOP_MULTIPLIER)))
             stop_price = max(stop_price, Decimal("0.01"))   # floor at $0.01
+            trail_pct = float((atr * Decimal(str(ATR_STOP_MULTIPLIER))) / ask * 100)
             logger.info(
                 f"{symbol}: entry≈{ask:.2f} | ATR={atr:.2f} | "
-                f"stop={stop_price:.2f} | target≈{ask + atr * Decimal(str(ATR_STOP_MULTIPLIER * RISK_REWARD_RATIO)):.2f}"
+                f"stop={stop_price:.2f} | trail_pct={trail_pct:.2f}% | "
+                f"target≈{ask + atr * Decimal(str(ATR_STOP_MULTIPLIER * RISK_REWARD_RATIO)):.2f}"
             )
-            # Place stop order on newly bought positions
-            place_trailing_stop_order(None, symbol, qty, float(atr * Decimal(str(ATR_STOP_MULTIPLIER))), "SELL")
-            # NOTE: place_trailing_stop_order uses trail_percent internally.
-            # A future improvement is to replace with a fixed stop-limit order
-            # at stop_price directly. For now, ATR-derived percentage approximates
-            # the intended stop distance.
-            # APPROXIMATION: converting ATR distance to a percentage for the
-            # existing trailing stop function. True Option A would place a
-            # hard stop at a fixed price, not a trailing stop.
+            # APPROXIMATION: converting ATR distance to trail_percent for TrailingStopOrderRequest.
+            # True Option A would place a hard stop-limit at stop_price directly.
+            place_trailing_stop_order(None, symbol, qty, trail_pct, "SELL")
 
 
 def handler(event, context):

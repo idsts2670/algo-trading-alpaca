@@ -38,7 +38,7 @@ def _get_clients() -> tuple[TradingClient, StockHistoricalDataClient]:
     ssm = boto3.client("ssm")
     api_key = ssm.get_parameter(Name="/alpaca/ALPACA_API_KEY", WithDecryption=True)["Parameter"]["Value"]
     secret_key = ssm.get_parameter(Name="/alpaca/ALPACA_SECRET_KEY", WithDecryption=True)["Parameter"]["Value"]
-    paper = os.environ.get("ALPACA_PAPER", "True").lower() != "False"
+    paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
     trading_client = TradingClient(api_key=api_key, secret_key=secret_key, paper=paper)
     stock_historical_data_client = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
     _clients_cache = (trading_client, stock_historical_data_client)
@@ -60,7 +60,7 @@ def get_price_history(symbol: str, bars: int = 120) -> list[dict]:
         start=start,
     )
     response = stock_historical_data_client.get_stock_bars(req)
-    bars_data = response.get(symbol, [])
+    bars_data = response[symbol] if symbol in response else []
     result = [
         {
             "close": float(bar.close),
