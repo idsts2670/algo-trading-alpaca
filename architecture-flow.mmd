@@ -1,32 +1,61 @@
 flowchart TD
     START(["CloudWatch fires
-9:30 AM ET"]) --> handler["handler()
+9:30 AM ET (Mon–Fri)"]) --> handler["handler()
 get_clock()"]
 
-    handler --> open{clock.is_open?}
+    handler --> open{"clock.is_open
+OR weekday extended hours?"}
     open -->|No| SKIP(["return: skipped
 market_closed"])
     open -->|Yes| scan
 
-    subgraph scan["MACD Signal Scan — build_target_portfolio()"]
+    subgraph scan["LBR Signal Scan — build_target_portfolio()"]
         M7["Magnificent 7
 AAPL · MSFT · NVDA · GOOGL · AMZN · META · TSLA"]
         M7 --> hist["get_price_history()
-500 x 5-min bars · last 14 days"]
-        hist --> macd["calculate_macd_signal()
-pandas_ta.macd(fast=3, slow=16, signal=9)
-score = MACD_line - signal_line"]
+120 daily bars · last ~6 months"]
+        hist --> lbr["calculate_lbr_signal()
+LBR 3/10 oscillator
+MACD = SMA(3) − SMA(10)
+signal = SMA(16) of MACD
+histogram = MACD − signal"]
+
+        lbr --> r1{"Rule 1
+≥ 31 bars?"}
+        r1 -->|No| FAIL["selected = False
+skip_reason logged"]
+        r1 -->|Yes| r2{"Rule 2
+ADX(14) > 32
+AND rising?"}
+        r2 -->|Yes| FAIL
+        r2 -->|No| r3{"Rule 3
+Close > EMA(20)?"}
+        r3 -->|No| FAIL
+        r3 -->|Yes| r4{"Rule 4
+Signal crossed zero
+from below in last 16 bars?"}
+        r4 -->|No| FAIL
+        r4 -->|Yes| r5{"Rule 5
+MACD pulled back to
+≤ signal + 0.5×ATR?"}
+        r5 -->|No| FAIL
+        r5 -->|Yes| r6{"Rule 6
+Histogram hooking up?
+hist_now > hist_prev"}
+        r6 -->|No| FAIL
+        r6 -->|Yes| PASS["selected = True
+return score & ATR"]
     end
 
-    scan --> positive{Any score > 0?}
-    positive -->|No| CASH(["Log: All MACD signals
-negative — holding cash"])
-    positive -->|Yes| select["Select positive symbols
-Equal weight allocation
-e.g. 3 of 7 → 33.3% each"]
+    scan --> positive{"Any symbol
+selected?"}
+    positive -->|No| CASH(["Log: no Anti setups —
+holding cash"])
+    positive -->|Yes| select["Select confirmed symbols
+Equal-weight allocation
+portfolio_value ÷ n symbols"]
 
     select --> snapshot
-    CASH --> DONE
 
     subgraph snapshot["Account Snapshot"]
         GET["get_account() → buying_power
@@ -38,7 +67,7 @@ _get_portfolio() ← DynamoDB"]
 
     subgraph cancel["Cancel Open Orders"]
         CANCEL["get_orders()
-cancel_order() x n"]
+cancel_order() × n"]
     end
 
     cancel --> rebal
@@ -52,24 +81,27 @@ sleep 2s"]
 sleep 2s"]
     end
 
-    BUY --> hours{Regular hours?
-9:30 AM-4:00 PM ET}
+    BUY --> hours{"Regular hours?
+9:30 AM–4:00 PM ET"}
 
     hours -->|Yes| REG["MarketOrderRequest
-TrailingStopOrderRequest
-TimeInForce.DAY / GTC"]
+TimeInForce.DAY"]
     hours -->|"No
-overnight / pre / after"| EXT["LimitOrderRequest
-StopLimitOrderRequest
+overnight / pre / after"| EXT["LimitOrderRequest @ ask/bid
 extended_hours=True
 feed=DataFeed.OVERNIGHT"]
 
     REG --> protect
     EXT --> protect
 
-    subgraph protect["Protect Positions"]
-        STOP["place_trailing_stop_order()
-trail = 4.75% on all held"]
+    subgraph protect["ATR-Based Exit Orders — per new buy"]
+        ASK["entry ≈ ask price"]
+        ASK --> STOP_CALC["stop = ask − ATR(14) × 1.5
+target = ask + ATR(14) × 1.5
+trail_pct = ATR×1.5 / ask × 100"]
+        STOP_CALC --> STOP_ORD["place_trailing_stop_order()
+Regular: TrailingStopOrderRequest GTC
+Extended: StopLimitOrderRequest GTC"]
     end
 
     protect --> store
