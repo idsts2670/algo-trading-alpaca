@@ -378,7 +378,8 @@ def run() -> None:
         cancel_order(None, str(order.id))
         logger.info(f"Cancelled order {order.id}")
 
-    desired = _desired_positions(desired_stocks, portfolio_value)
+    allocation = portfolio_value * Decimal("0.02")
+    desired = _desired_positions(desired_stocks, allocation)
     sell_pos, buy_pos = _position_changes(current_positions, desired)
 
     logger.info(f"Selling: {sell_pos}")
