@@ -10,12 +10,14 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run pytest tests/
-      - run: uv export --no-dev --format requirements-txt -o requirements-lambda.txt
-      - run: uv pip install -r requirements-lambda.txt --target ./layer/python --python-platform linux --python 3.12
+      - run: uv export --no-dev --no-hashes --format requirements-txt -o requirements-lambda.txt
+      - run: grep -vE "^(boto3|botocore|s3transfer|numba|llvmlite)==" requirements-lambda.txt > requirements-lambda-layer.txt
+      - run: uv pip install -r requirements-lambda-layer.txt --target ./layer/python --python-platform linux --python 3.12
       - run: npm ci
       - run: npx serverless deploy
