@@ -30,7 +30,6 @@ node_modules/
 # Dev tooling and local instructions
 .cursor/
 .claude/
-CLAUDE.md
 
 # Reference material (not part of deployable codebase)
 reference/
