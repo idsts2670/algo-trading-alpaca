@@ -29,6 +29,8 @@ def test_place_order_buy(mocker):
     from alpaca.trading.enums import OrderSide, TimeInForce
 
     mock_trading, _ = _make_mock_clients(mocker)
+    # Force regular hours so the function uses MarketOrderRequest
+    mocker.patch("alpaca_broker._is_extended_hours", return_value=False)
     mock_order = MagicMock()
     mock_trading.submit_order.return_value = mock_order
 
@@ -49,6 +51,7 @@ def test_place_order_sell(mocker):
     from alpaca.trading.enums import OrderSide
 
     mock_trading, _ = _make_mock_clients(mocker)
+    mocker.patch("alpaca_broker._is_extended_hours", return_value=False)
     mock_trading.submit_order.return_value = MagicMock()
 
     import alpaca_broker
@@ -63,6 +66,7 @@ def test_place_trailing_stop_order(mocker):
     from alpaca.trading.enums import TimeInForce
 
     mock_trading, _ = _make_mock_clients(mocker)
+    mocker.patch("alpaca_broker._is_extended_hours", return_value=False)
     mock_trading.submit_order.return_value = MagicMock()
 
     import alpaca_broker

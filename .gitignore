@@ -12,6 +12,8 @@ wheels/
 # Lambda build artifacts
 layer/python/
 requirements-lambda.txt
+requirements-lambda-layer.txt
+.serverless/
 
 # Node
 node_modules/

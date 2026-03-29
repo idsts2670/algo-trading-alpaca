@@ -1,11 +1,13 @@
 service: algo-trading-alpaca
+org: satopersonal
+app: algo-trading-alpaca
 
 frameworkVersion: '4'
 
 provider:
   name: aws
   runtime: python3.12
-  region: us-east-1
+  region: us-east-2
   stackTags:
     project: algo-trading-alpaca
   environment:
@@ -36,6 +38,24 @@ layers:
     path: layer
     compatibleRuntimes:
       - python3.12
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!layer/**'
+    - '!tests/**'
+    - '!.venv/**'
+    - '!reference/**'
+    - '!.github/**'
+    - '!.cursor/**'
+    - '!.claude/**'
+    - '!**/*.md'
+    - '!**/*.mmd'
+    - '!**/*.txt'
+    - '!pyproject.toml'
+    - '!uv.lock'
+    - '!package*.json'
+    - '!architecture*'
 
 functions:
   trading-bot:

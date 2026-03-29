@@ -5,7 +5,6 @@ requires-python = ">=3.12"
 dependencies = [
     "alpaca-py",
     "pandas",
-    "pandas-ta",
     "boto3",
     "pytz>=2026.1.post1",
 ]

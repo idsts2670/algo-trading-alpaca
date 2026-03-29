@@ -7,7 +7,6 @@ from decimal import Decimal
 
 import boto3
 import pandas as pd
-import pandas_ta as ta
 
 from alpaca_broker import (
     NY_TZ, _is_extended_hours,
@@ -49,9 +48,10 @@ def calculate_macd_signal(symbol: str, price_data: list[dict]) -> float:
         logger.warning(f"{symbol}: only {len(price_data)} bars (need {MACD_MIN_BARS}), skipping")
         return 0.0
     closes = pd.Series([d["close"] for d in price_data])
-    macd_df = ta.macd(closes, fast=MACD_FAST, slow=MACD_SLOW, signal=MACD_SIGNAL)
-    macd_line = macd_df[f"MACD_{MACD_FAST}_{MACD_SLOW}_{MACD_SIGNAL}"]
-    signal_line = macd_df[f"MACDs_{MACD_FAST}_{MACD_SLOW}_{MACD_SIGNAL}"]
+    ema_fast = closes.ewm(span=MACD_FAST, adjust=False).mean()
+    ema_slow = closes.ewm(span=MACD_SLOW, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=MACD_SIGNAL, adjust=False).mean()
     score = float(macd_line.iloc[-1] - signal_line.iloc[-1])
     logger.info(f"{symbol} MACD signal score: {score:.6f}")
     return score
