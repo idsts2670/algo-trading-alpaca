@@ -14,7 +14,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.trading.models import Clock
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 
 NY_TZ = ZoneInfo("America/New_York")
@@ -50,20 +50,25 @@ def get_clock() -> Clock:
     return trading_client.get_clock()
 
 
-def get_price_history(symbol: str, bars: int = 500) -> list[dict]:
+def get_price_history(symbol: str, bars: int = 120) -> list[dict]:
     _, stock_historical_data_client = _get_clients()
     today = datetime.now(NY_TZ).date()
-    start = today - timedelta(days=14)
+    start = today - timedelta(days=180)   # ~6 months covers 120+ trading days
     req = StockBarsRequest(
         symbol_or_symbols=symbol,
-        timeframe=TimeFrame(5, TimeFrameUnit.Minute),
+        timeframe=TimeFrame.Day,
         start=start,
-        feed=DataFeed.OVERNIGHT if _is_extended_hours() else None,
     )
     response = stock_historical_data_client.get_stock_bars(req)
+    bars_data = response.get(symbol, [])
     result = [
-        {"close": float(bar.close), "datetime": bar.timestamp.timestamp() * 1000}
-        for bar in response[symbol]
+        {
+            "close": float(bar.close),
+            "high":  float(bar.high),    # needed for ATR calculation
+            "low":   float(bar.low),     # needed for ATR calculation
+            "datetime": bar.timestamp.timestamp() * 1000,
+        }
+        for bar in bars_data
     ]
     return result[-bars:] if len(result) > bars else result
 
