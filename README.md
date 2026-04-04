@@ -1,4 +1,4 @@
-# Alpaca Algo Trading Bot
+# Alpaca's Algo Trading Bot
 
 **Alpaca Resources**
 
@@ -68,7 +68,7 @@ Positions are rebalanced on every trigger. Symbols that no longer pass the Anti 
 
 ```
 ├── main.py               # Lambda handler + LBR strategy
-├── alpaca_broker.py      # Alpaca API wrapper
+├── alpaca_broker.py      # Alpaca's Trading API wrapper
 ├── tests/                # Unit tests (pytest)
 ├── docs/
 │   ├── PRE-DEPLOYMENT.md # AWS setup checklist (do this first)
